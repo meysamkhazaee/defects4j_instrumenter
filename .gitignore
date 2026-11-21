@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+env/
+
+# Java
+*.class
+*.jar
+java-agent/build/
+
+# Defects4J runtime / work
+output/
+work/
+checkouts/
+framework-cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
