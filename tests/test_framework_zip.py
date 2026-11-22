@@ -10,7 +10,11 @@ from pathlib import Path
 from unittest import mock
 
 from defects4j_efl_instrumenter.commands import CommandError, configure_java_home, d4j
-from defects4j_efl_instrumenter.framework import _setup_distribution, prepare_defects4j
+from defects4j_efl_instrumenter.framework import (
+    _setup_distribution,
+    download_defects4j,
+    prepare_defects4j,
+)
 
 
 def _zip_info(name: str, mode: int) -> zipfile.ZipInfo:
@@ -153,6 +157,46 @@ class FrameworkZipTests(unittest.TestCase):
             marker = json.loads((root / ".efl-cpan-deps.json").read_text(encoding="utf-8"))
             self.assertEqual(marker["install_root"], str(root / ".efl-perl5"))
             self.assertTrue((root / ".efl-defects4j-ready.json").is_file())
+
+    def test_download_defects4j_skips_when_valid_zip_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "defects4j-3.0.1.zip"
+            _write_distribution_zip(destination, initialized=True)
+            with mock.patch("urllib.request.urlopen") as mock_url:
+                result = download_defects4j(destination)
+                mock_url.assert_not_called()
+                self.assertEqual(result, destination)
+
+    def test_download_defects4j_downloads_and_validates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "defects4j-3.0.1.zip"
+            dummy_zip = Path(directory) / "dummy.zip"
+            _write_distribution_zip(dummy_zip, initialized=True)
+            dummy_bytes = dummy_zip.read_bytes()
+
+            class DummyResponse:
+                def __init__(self, data: bytes):
+                    self.data = data
+                    self.headers = {"Content-Length": str(len(data))}
+                    self.offset = 0
+
+                def read(self, size: int = -1) -> bytes:
+                    if self.offset >= len(self.data):
+                        return b""
+                    chunk = self.data[self.offset : self.offset + size]
+                    self.offset += len(chunk)
+                    return chunk
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    pass
+
+            with mock.patch("urllib.request.urlopen", return_value=DummyResponse(dummy_bytes)):
+                result = download_defects4j(destination)
+                self.assertTrue(result.is_file())
+                self.assertEqual(result.read_bytes(), dummy_bytes)
 
 
 if __name__ == "__main__":

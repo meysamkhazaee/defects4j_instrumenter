@@ -140,11 +140,9 @@ def resolve_defects4j(
         else:
             found = shutil.which("defects4j")
             if not found:
-                raise CommandError(
-                    "Defects4J was not found. Pass --defects4j /path/to/defects4j-3.0.1.zip, "
-                    "/path/to/defects4j, or framework/bin/defects4j."
-                )
-            value = Path(found)
+                value = package_root / "defects4j-3.0.1.zip"
+            else:
+                value = Path(found)
     from .framework import prepare_defects4j
 
     prepared = prepare_defects4j(

@@ -173,11 +173,20 @@ def main():
         local_zip = SCRIPT_DIR / "defects4j-3.0.1.zip"
         if local_zip.is_file():
             defects4j_target = local_zip
+        else:
+            env_d4j = os.environ.get("DEFECTS4J_HOME") or os.environ.get("DEFECTS4J_PATH")
+            if env_d4j and Path(env_d4j).exists():
+                defects4j_target = Path(env_d4j)
+            else:
+                found = shutil.which("defects4j")
+                if found:
+                    defects4j_target = Path(found)
+                else:
+                    defects4j_target = local_zip
 
-    if not defects4j_target:
-        print("[-] Error: Defects4J archive or executable path not found!")
-        print("    Please provide --defects4j <path-to-zip-or-dir> or set DEFECTS4J_HOME.")
-        sys.exit(1)
+    if defects4j_target.suffix.lower() == ".zip" and not defects4j_target.is_file():
+        print(f"[*] Defects4J archive not found at {defects4j_target}.")
+        print("    Auto-downloading Defects4J v3.0.1 from GitHub...")
 
     distribution = prepare_defects4j(
         defects4j_target,

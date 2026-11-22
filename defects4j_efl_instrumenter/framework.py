@@ -9,12 +9,18 @@ import stat
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .commands import CommandError, defects4j_environment
 from .progress import ConsoleReporter, LogLevel
+
+
+DEFECTS4J_RELEASE_URL = "https://github.com/rjust/defects4j/archive/refs/tags/v3.0.1.zip"
+DEFECTS4J_FALLBACK_URL = "https://github.com/rjust/defects4j/archive/v3.0.1.zip"
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,126 @@ def _is_within(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def download_defects4j(
+    destination: Path,
+    url: str | None = None,
+    *,
+    reporter: ConsoleReporter | None = None,
+) -> Path:
+    destination = destination.expanduser().resolve()
+    if destination.is_file() and zipfile.is_zipfile(destination):
+        _log(reporter, LogLevel.INFO, f"[CACHE HIT] Defects4J archive ready: {destination}")
+        return destination
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    urls = [url] if url else [DEFECTS4J_RELEASE_URL, DEFECTS4J_FALLBACK_URL]
+
+    _log(
+        reporter,
+        LogLevel.INFO,
+        f"[DEFECTS4J DOWNLOAD] Preparing to download Defects4J archive to {destination}...",
+    )
+
+    temp_dir = destination.parent
+    fd, temp_file_str = tempfile.mkstemp(prefix=f".{destination.name}.download-", dir=temp_dir)
+    os.close(fd)
+    temp_path = Path(temp_file_str)
+
+    success = False
+    last_error: Exception | str | None = None
+
+    try:
+        for target_url in urls:
+            _log(reporter, LogLevel.INFO, f"[DEFECTS4J DOWNLOAD] Downloading from {target_url} ...")
+            # 1. Attempt using urllib.request
+            try:
+                req = urllib.request.Request(
+                    target_url,
+                    headers={"User-Agent": "Mozilla/5.0 (Defects4J-Instrumenter)"},
+                )
+                with urllib.request.urlopen(req, timeout=120.0) as response, temp_path.open("wb") as out_file:
+                    total_header = response.headers.get("Content-Length")
+                    total_size = int(total_header) if total_header and total_header.isdigit() else None
+                    downloaded = 0
+                    chunk_size = 512 * 1024
+                    last_reported_mb = 0
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        out_file.write(chunk)
+                        downloaded += len(chunk)
+                        if reporter and total_size:
+                            reporter.progress(
+                                downloaded,
+                                total_size,
+                                label="Downloading Defects4J v3.0.1",
+                                detail=f"{downloaded / (1024 * 1024):.1f}/{total_size / (1024 * 1024):.1f} MB",
+                            )
+                        else:
+                            current_mb = downloaded // (1024 * 1024)
+                            if current_mb >= last_reported_mb + 10:
+                                last_reported_mb = current_mb
+                                _log(reporter, LogLevel.INFO, f"[DEFECTS4J DOWNLOAD] {current_mb} MB downloaded...")
+
+                if zipfile.is_zipfile(temp_path):
+                    success = True
+                    break
+                else:
+                    last_error = f"File downloaded from {target_url} is not a valid zip archive."
+                    _log(reporter, LogLevel.WARNING, f"[DEFECTS4J DOWNLOAD] {last_error}")
+            except Exception as exc:
+                last_error = exc
+                _log(
+                    reporter,
+                    LogLevel.WARNING,
+                    f"[DEFECTS4J DOWNLOAD] urllib download failed ({exc}), attempting CLI fallback...",
+                )
+
+            # 2. CLI fallback (curl or wget)
+            curl = shutil.which("curl")
+            if curl:
+                _log(reporter, LogLevel.INFO, f"[DEFECTS4J DOWNLOAD] Trying curl: {target_url}")
+                res = subprocess.run(
+                    [curl, "-fSL", "--retry", "3", "-o", str(temp_path), target_url],
+                    check=False,
+                )
+                if res.returncode == 0 and zipfile.is_zipfile(temp_path):
+                    success = True
+                    break
+
+            wget = shutil.which("wget")
+            if wget:
+                _log(reporter, LogLevel.INFO, f"[DEFECTS4J DOWNLOAD] Trying wget: {target_url}")
+                res = subprocess.run(
+                    [wget, "-q", "--show-progress", "-O", str(temp_path), target_url],
+                    check=False,
+                )
+                if res.returncode == 0 and zipfile.is_zipfile(temp_path):
+                    success = True
+                    break
+
+        if not success:
+            raise CommandError(
+                f"Failed to download Defects4J archive to {destination}. "
+                f"Last error: {last_error}. Please manually download from {DEFECTS4J_RELEASE_URL} "
+                f"and place it at {destination}."
+            )
+
+        if destination.exists():
+            destination.unlink(missing_ok=True)
+        temp_path.replace(destination)
+        _log(
+            reporter,
+            LogLevel.INFO,
+            f"[DEFECTS4J DOWNLOAD] Completed: {destination} ({destination.stat().st_size / (1024 * 1024):.2f} MB)",
+        )
+        return destination
+    finally:
+        if not success and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def _extract_zip(archive: Path, destination: Path, reporter: ConsoleReporter | None) -> Path:
@@ -401,7 +527,14 @@ def prepare_defects4j(
     archive: Path | None = None
     digest: str | None = None
 
-    if source.is_file() and source.suffix.lower() == ".zip":
+    if source.suffix.lower() == ".zip":
+        if not source.is_file():
+            _log(
+                reporter,
+                LogLevel.INFO,
+                f"[DEFECTS4J] Archive not found at {source}. Starting automatic download...",
+            )
+            download_defects4j(source, reporter=reporter)
         archive = source
         if cache_root is None:
             raise CommandError(

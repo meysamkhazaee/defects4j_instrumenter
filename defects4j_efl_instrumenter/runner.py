@@ -624,22 +624,26 @@ def instrument_suite(
     work: Path,
     bugs: list[BugRef],
     *,
-    asm_jar: Path | None,
-    rebuild_agent: bool,
-    test_selection: str,
-    test_limit: int | None,
-    instrument_scope: str,
-    test_timeout: float,
-    validate_fixed: bool,
-    cache_mode: str,
-    refresh_checkouts: bool,
-    keep_checkouts: bool,
-    jobs: int,
-    reporter: ConsoleReporter,
+    agent: AgentBuild | None = None,
+    asm_jar: Path | None = None,
+    rebuild_agent: bool = False,
+    test_selection: str = "relevant",
+    test_limit: int | None = None,
+    instrument_scope: str = "relevant",
+    test_timeout: float = 300.0,
+    validate_fixed: bool = False,
+    cache_mode: str = "reuse",
+    refresh_checkouts: bool = False,
+    keep_checkouts: bool = False,
+    jobs: int = 4,
+    reporter: ConsoleReporter | None = None,
 ) -> list[Path]:
     if not bugs:
         raise RuntimeError("No Defects4J bugs matched the selection")
-    agent = ensure_agent(asm_jar=asm_jar, reporter=reporter, rebuild=rebuild_agent)
+    if reporter is None:
+        reporter = ConsoleReporter()
+    if agent is None:
+        agent = ensure_agent(asm_jar=asm_jar, reporter=reporter, rebuild=rebuild_agent)
     work = work.expanduser().resolve()
     work.mkdir(parents=True, exist_ok=True)
     max_workers, jobs_detail = resolve_instrument_jobs(jobs)
