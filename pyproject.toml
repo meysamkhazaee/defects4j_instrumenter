@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "defects4j-efl-instrumenter"
-version = "1.3.5"
+dynamic = ["version"]
 description = "Ordered Java execution tracing and EFL dataset generation for Defects4J"
 requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
 defects4j-efl-data = "defects4j_efl_instrumenter.cli:main"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 include = ["defects4j_efl_instrumenter*"]

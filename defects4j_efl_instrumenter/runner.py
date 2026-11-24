@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Iterable
 
+from . import __version__
 from .agent import ensure_agent, java_command, java_tool_options
 from .commands import CommandError, d4j, query_bug_ids, run_command
 from .metadata import collect_metadata
@@ -431,7 +432,7 @@ def instrument_bug(
         "validate_fixed": validate_fixed, "agent_mode": agent.mode,
     }
     cache_fingerprint = fingerprint({
-        "release": "1.3.5", "options": cache_options,
+        "release": __version__, "options": cache_options,
         "defects4j_executable_sha256": hash_file(executable),
         "agent_sha256": hash_file(agent.jar),
     })

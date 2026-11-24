@@ -1,5 +1,8 @@
 # ابزار اینسترومنت و تولید دیتاسِت Defects4J (جاوا)
 
+[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](file:///D:/personal/defects4j_instrumenter/VERSION)
+[![Changelog](https://img.shields.io/badge/changelog-available-green.svg)](file:///D:/personal/defects4j_instrumenter/CHANGELOG.md)
+
 این پروژه یک فریم‌ورک مستقل، خودکار و دقیق برای اینسترومنت کردن برنامه‌های جاوا در بنچ‌مارک **Defects4J** و استخراج مسیرهای اجرایی (Execution Traces) با نقاط گره‌ای `P` است. فرمت خروجی‌های این پروژه دقیقاً متناظر و هم‌شکل با بنچ‌مارک زیمنس تولید می‌شود.
 
 ---
@@ -129,3 +132,16 @@ python3 run_defects4j.py --projects Lang --bugs 1
   - **`relevant` (بسیار سریع و استاندارد ۵۰x-۱۰۰x):** اجرای تست‌های مرتبط با کلاس‌های تغییریافته (شامل تمام مسیرهای Pass، CC و Fail).
   - **`trigger` (دیباگ سریع):** فقط تست‌های فیل‌شده (۱ تا ۳ تست برای هر باگ).
   - **`all` (بسیار کند):** اجرای تمام چند هزار تست کل مخزن (استفاده از آن برای کل ۸۳۸ باگ اصلاً توصیه نمی‌شود چون هفته‌ها زمان می‌برد).
+
+---
+
+### ۵. نسخه و تاریخچه تغییرات (Versioning & Changelog):
+
+نسخه این پروژه به‌صورت متمرکز در فایل [VERSION](file:///D:/personal/defects4j_instrumenter/VERSION) ذخیره شده و تمامی بخش‌های زیر از آن رفرنس می‌گیرند:
+- پیکربندی پکیج در `pyproject.toml`
+- پکیج پایتون `defects4j_efl_instrumenter` (`__version__`)
+- اسکریپت کامپایل ایجنت جاوا (`java-agent/build.py`) و متادیتای `MANIFEST.MF`
+- اسکریپت‌های اجرایی `run_defects4j.py` و CLI با فلگ `--version`
+
+برای مشاهده تاریخچه کامل نسخه‌ها و تغییرات به [CHANGELOG.md](file:///D:/personal/defects4j_instrumenter/CHANGELOG.md) مراجعه نمایید.
+

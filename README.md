@@ -1,5 +1,8 @@
 # Defects4J Instrumenter & Dataset Generator
 
+[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](file:///D:/personal/defects4j_instrumenter/VERSION)
+[![Changelog](https://img.shields.io/badge/changelog-available-green.svg)](file:///D:/personal/defects4j_instrumenter/CHANGELOG.md)
+
 A standalone, automated instrumentation engine and dataset generator for the **Defects4J** Java benchmark suite.
 
 This project instruments Java classes at the bytecode level, captures execution traces as sequences of predicate points (`P1, P2, ...`), identifies **Coincidental Correctness (CC)**, and produces standardized datasets identical to the Siemens benchmark format.
@@ -177,3 +180,16 @@ Run test suite:
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+---
+
+## 📌 Versioning & Changelog
+
+The project version is centrally defined in [VERSION](file:///D:/personal/defects4j_instrumenter/VERSION) and dynamically referenced by:
+- `pyproject.toml` (PEP 621 dynamic metadata)
+- `defects4j_efl_instrumenter` package (`__version__`)
+- `java-agent/build.py` (writes `Implementation-Version` to `MANIFEST.MF`)
+- `run_defects4j.py` and CLI `--version`
+
+For a complete history of changes, see [CHANGELOG.md](file:///D:/personal/defects4j_instrumenter/CHANGELOG.md).
+
