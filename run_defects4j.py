@@ -11,11 +11,11 @@ Capabilities:
      - PASS (T): Test passed, fault predicate was NOT visited.
      - COINCIDENTAL_CORRECT (CC / T): Test passed, BUT fault predicate WAS visited!
      - FAIL (F): Test failed (oracle mismatch / exception).
-  6. Generation of standard ML / FL dataset files matching the Siemens format:
-     - <version>_dataset.txt: Lines 1..N execution P-traces, Line N+1 verdict vector (T,T,T,F,...).
-     - <version>_tagged.txt: Lines 1..N execution P-traces, Line N+1 tagged verdicts (T,CC,F,...).
-     - <version>_detailed.json: Full structural metadata and test-by-test breakdown.
-     - cmp.v0.v<bug>.<project>.csv: EFL Stage 2 compatible CSV feed.
+  6. Generation of compact, self-describing EFL v2 dataset files under work/results/<project>/v<bug>/<test_set>/:
+     - traces.tsv.gz: Gzip-compressed TSV with header (test_id, status, cc, path).
+     - tests.tsv: Mapping from T1..TN to full JUnit test methods and execution metadata.
+     - summary.json: Aggregate counts and fault predicates without duplicating traces.
+     - source_map.csv & source_changes.json: Predicate-to-source and bug-diff mappings.
 """
 
 from __future__ import annotations
@@ -117,6 +117,18 @@ def parse_args():
         type=float,
         default=300.0,
         help="Per-test execution timeout in seconds",
+    )
+    parser.add_argument(
+        "--keep-checkouts",
+        action="store_true",
+        default=False,
+        help="Keep Defects4J buggy/fixed checkouts after instrumentation",
+    )
+    parser.add_argument(
+        "--keep-raw-traces",
+        action="store_true",
+        default=False,
+        help="Keep raw per-test binary trace.bin files after building traces.tsv.gz",
     )
     parser.add_argument(
         "--cache",
@@ -237,6 +249,8 @@ def main():
         instrument_scope=args.instrument_scope,
         test_timeout=args.timeout,
         validate_fixed=False,
+        keep_checkouts=args.keep_checkouts,
+        keep_raw_traces=args.keep_raw_traces,
         jobs=args.jobs,
         cache_mode=args.cache,
         reporter=reporter,
@@ -247,7 +261,7 @@ def main():
     print("\n" + "=" * 80)
     print(f" Instrumentation Complete in {elapsed:.2f} seconds!")
     print(f" Total Bug Versions Processed: {len(results)}")
-    print(f" Consolidated Datasets Directory: {work_dir / 'datasets'}")
+    print(f" Results Directory: {work_dir / 'results'}")
     print("=" * 80)
 
 

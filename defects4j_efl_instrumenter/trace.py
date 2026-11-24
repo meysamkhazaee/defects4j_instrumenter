@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 import struct
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 from .models import TestRun
 
@@ -51,17 +52,6 @@ def merge_trace_directory(path: Path, destination: Path) -> int:
     return count
 
 
-def write_efl_input(path: Path, runs: Iterable[TestRun]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    csv.field_size_limit(1024 * 1024 * 1024)
-    with path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
-        for run in runs:
-            if run.result not in {"T", "F"} or not run.trace_file or run.trace_count <= 0:
-                continue
-            writer.writerow([run.test, run.result, ",".join(f"P{value}" for value in iter_trace_file(run.trace_file))])
-
-
 def resolve_fault_predicates(source_map_path: Path, source_changes_path: Path) -> set[int]:
     """Identify which predicate IDs correspond to mutated lines in buggy source code."""
     if not source_map_path.is_file() or not source_changes_path.is_file():
@@ -98,109 +88,183 @@ def resolve_fault_predicates(source_map_path: Path, source_changes_path: Path) -
     return fault_preds
 
 
-def write_standard_matrix_dataset(path: Path, runs: list[TestRun]) -> None:
-    """Write standard FL/ML dataset: lines 1..N are P-traces, line N+1 is the T/F verdict vector."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="\n", encoding="utf-8") as stream:
-        for run in runs:
-            trace_str = ",".join(f"P{val}" for val in iter_trace_file(run.trace_file))
-            stream.write(trace_str + "\n")
-        verdicts = ",".join(run.result for run in runs)
-        stream.write(verdicts + "\n")
-
-
-def write_tagged_matrix_dataset(
+def write_traces_tsv_gz(
     path: Path,
-    runs: list[TestRun],
+    runs: Iterable[TestRun],
     fault_predicates: set[int],
+    *,
+    compresslevel: int = 6,
 ) -> dict[str, Any]:
-    """Write tagged dataset with Coincidental Correctness (CC) identification."""
+    """Write the canonical gzip-compressed TSV trace file (`traces.tsv.gz`).
+
+    Columns: ``test_id``, ``status`` (``T``/``F``), ``cc`` (``1``/``0``), ``path``
+    (space-separated integer predicate IDs matching ``source_map.csv`` ``id``).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tags_rich = []
-    classifications = []
-    tests_detail = []
     n_pass = 0
     n_cc = 0
     n_fail = 0
+    included_rows: list[dict[str, Any]] = []
 
-    with path.open("w", newline="\n", encoding="utf-8") as stream:
-        for run in runs:
-            trace_vals = list(iter_trace_file(run.trace_file))
-            trace_str = ",".join(f"P{val}" for val in trace_vals)
-            stream.write(trace_str + "\n")
-
-            fault_visited = bool(fault_predicates and any(p in fault_predicates for p in trace_vals))
+    with gzip.open(path, "wt", encoding="utf-8", newline="\n", compresslevel=compresslevel) as stream:
+        stream.write("test_id\tstatus\tcc\tpath\n")
+        for idx, run in enumerate(runs, start=1):
+            if run.result not in {"T", "F"} or not run.trace_file or run.trace_count <= 0:
+                continue
+            test_id = f"T{idx}"
+            fault_visited = False
+            tokens: list[str] = []
+            for pred_id in iter_trace_file(run.trace_file):
+                if fault_predicates and not fault_visited and pred_id in fault_predicates:
+                    fault_visited = True
+                tokens.append(str(pred_id))
+            if not tokens:
+                continue
 
             if run.result == "F":
-                tag_strict = "F"
-                tag_rich = "F"
-                classification = "FAIL"
+                cc_flag = 0
                 n_fail += 1
             elif fault_visited:
-                tag_strict = "T"
-                tag_rich = "CC"
-                classification = "COINCIDENTAL_CORRECT"
+                cc_flag = 1
                 n_cc += 1
             else:
-                tag_strict = "T"
-                tag_rich = "T"
-                classification = "PASS"
+                cc_flag = 0
                 n_pass += 1
 
-            tags_rich.append(tag_rich)
-            classifications.append(classification)
-            tests_detail.append({
-                "test": run.test,
-                "result": run.result,
-                "classification": classification,
-                "tag_strict": tag_strict,
-                "tag_rich": tag_rich,
-                "fault_visited": fault_visited,
-                "trace_len": len(trace_vals),
-            })
-
-        verdicts_cc = ",".join(tags_rich)
-        stream.write(verdicts_cc + "\n")
+            stream.write(f"{test_id}\t{run.result}\t{cc_flag}\t{' '.join(tokens)}\n")
+            included_rows.append(
+                {
+                    "test_id": test_id,
+                    "test_name": run.test,
+                    "status": run.result,
+                    "cc": cc_flag,
+                    "included": 1,
+                    "trace_len": len(tokens),
+                    "duration_sec": round(run.duration_seconds, 4),
+                    "return_code": run.return_code,
+                    "timed_out": int(run.timed_out),
+                    "reason": "",
+                }
+            )
 
     return {
         "n_pass": n_pass,
         "n_cc": n_cc,
         "n_fail": n_fail,
-        "tags_rich": tags_rich,
-        "tests_detail": tests_detail,
+        "included_rows": included_rows,
     }
 
 
-def write_detailed_summary(
+def write_tests_tsv(path: Path, rows: list[dict[str, Any]]) -> None:
+    """Write human-readable per-test metadata and test_id -> test_name mapping."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(
+            "test_id\ttest_name\tstatus\tcc\tincluded\ttrace_len\tduration_sec\treturn_code\ttimed_out\treason\n"
+        )
+        for row in rows:
+            safe_name = str(row["test_name"]).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+            safe_reason = str(row.get("reason", "")).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+            stream.write(
+                f"{row['test_id']}\t{safe_name}\t{row['status']}\t{row['cc']}\t"
+                f"{row['included']}\t{row['trace_len']}\t{row['duration_sec']}\t"
+                f"{row['return_code']}\t{row['timed_out']}\t{safe_reason}\n"
+            )
+
+
+def write_version_summary(
     path: Path,
+    *,
+    benchmark: str,
     project: str,
     bug_id: int,
-    runs: list[TestRun],
+    test_set: str,
+    instrument_scope: str,
     fault_predicates: set[int],
     tag_info: dict[str, Any],
+    tests_discovered: int,
+    tests_excluded: int,
+    total_events: int,
+    max_events: int,
+    min_events: int,
     duration: float = 0.0,
 ) -> None:
-    """Write comprehensive JSON metadata matching the Siemens detailed format."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    detailed = {
-        "benchmark": "Defects4J",
+    """Write compact version summary JSON without duplicating trace sequences."""
+    included_rows = tag_info.get("included_rows", [])
+    summary = {
+        "schema": "efl-dataset-v2",
+        "benchmark": benchmark,
         "project": project,
         "version": f"v{bug_id}",
-        "total_tests": len(runs),
+        "test_set": test_set,
+        "instrumentation": {
+            "granularity": "bytecode_line",
+            "engine": "java_asm_agent",
+            "scope": instrument_scope,
+            "predicate_format": "integer_id_matching_source_map_id",
+        },
+        "files": {
+            "traces": "traces.tsv.gz",
+            "tests": "tests.tsv",
+            "source_map": "source_map.csv",
+            "source_changes": "source_changes.json",
+            "metadata": "metadata.json",
+        },
         "duration_sec": round(duration, 2),
+        "tests_discovered": tests_discovered,
+        "tests_included": len(included_rows),
+        "tests_excluded": tests_excluded,
+        "total_trace_events": total_events,
+        "max_trace_events": max_events,
+        "min_trace_events": min_events,
         "fault_predicates": [f"P{p}" for p in sorted(fault_predicates)],
-        "summary": {
-            "pass": tag_info.get("n_pass", 0),
+        "fault_predicate_ids": sorted(fault_predicates),
+        "counts": {
+            "pass_clean": tag_info.get("n_pass", 0),
             "coincidental_correct": tag_info.get("n_cc", 0),
             "fail": tag_info.get("n_fail", 0),
         },
-        "verdict_vector_strict": [r.result for r in runs],
-        "verdict_vector_tagged": tag_info.get("tags_rich", []),
-        "tests": tag_info.get("tests_detail", []),
     }
-    write_json(path, detailed)
+    write_json(path, summary)
 
 
 def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+DATASET_README_TEXT = """# EFL Dataset Format Guide (`efl-dataset-v2`)
+
+Each `<program>/v<id>/<test_set>/` directory contains one compact, lossless dataset:
+
+- `traces.tsv.gz`: Gzip-compressed UTF-8 TSV with header `test_id\\tstatus\\tcc\\tpath`.
+  - `test_id`: Short test identifier (`T1`, `T2`, ...) mapped to the full test name in `tests.tsv`.
+  - `status`: Strict oracle verdict (`T` = Pass, `F` = Fail).
+  - `cc`: Ground-truth Coincidental Correctness flag (`1` if `status=T` and execution visited a fault predicate, else `0`).
+  - `path`: Space-separated integer predicate IDs (`1 2 3 ...`) in exact execution order, matching `id` in `source_map.csv`.
+- `tests.tsv`: Complete inventory of executed and excluded tests (`T1..TN` and `X1..XM`), mapping `test_id` to exact JUnit test method (`pkg.Class#method`) or Siemens `universe` command line, plus `status`, `cc`, `included`, `trace_len`, `duration_sec`, `return_code`, `timed_out`, `reason`.
+- `source_map.csv`: Maps each integer predicate `id` (`P<id>`) to `file`, `line`, `column`, `function` (and bytecode `class,method,descriptor,event_type` for Defects4J or AST `kind` for Siemens).
+- `source_changes.json`: Line-level diff between the healthy/fixed source and the buggy source (`file`, `kind`/`change_type`, `reference_lines`, `faulty_lines`, `reference_text`, `faulty_text`).
+- `summary.json`: Compact version statistics, instrumentation metadata (`granularity`, `engine`, `scope`), and `fault_predicate_ids`.
+- `metadata.json`: Benchmark, program, version, test set, and source/classpath metadata.
+- `cache_manifest.json`: File sizes and SHA-256 checksums for EFL cache validation.
+
+## Inspecting Traces
+
+```bash
+gzip -dc traces.tsv.gz | head -n 5
+```
+
+```python
+import pandas as pd
+traces = pd.read_csv("traces.tsv.gz", sep="\\t")
+tests = pd.read_csv("tests.tsv", sep="\\t")
+smap = pd.read_csv("source_map.csv")
+```
+"""
+
+
+def write_dataset_readme(results_root: Path) -> None:
+    results_root.mkdir(parents=True, exist_ok=True)
+    readme = results_root / "DATASET_README.md"
+    readme.write_text(DATASET_README_TEXT, encoding="utf-8")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+import json
 import struct
 import tempfile
 import unittest
@@ -10,9 +12,9 @@ from defects4j_efl_instrumenter.models import TestRun
 from defects4j_efl_instrumenter.trace import (
     iter_trace_file,
     merge_trace_directory,
-    resolve_fault_predicates,
-    write_standard_matrix_dataset,
-    write_tagged_matrix_dataset,
+    write_tests_tsv,
+    write_traces_tsv_gz,
+    write_version_summary,
 )
 
 
@@ -48,7 +50,7 @@ class PatchAndTraceTests(unittest.TestCase):
             self.assertEqual(count, 4)
             self.assertEqual(list(iter_trace_file(destination)), [1, 2, 3, 4])
 
-    def test_standard_and_tagged_matrix_dataset_generation(self) -> None:
+    def test_traces_tsv_gz_and_summary_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             t1_file = root / "t1.bin"
@@ -60,32 +62,54 @@ class PatchAndTraceTests(unittest.TestCase):
             t3_file.write_bytes(b"".join(struct.pack(">i", v) for v in (2, 3, 4)))
 
             runs = [
-                TestRun(test="test1", result="T", trace_file=t1_file, trace_count=3),
-                TestRun(test="test2", result="T", trace_file=t2_file, trace_count=3),
-                TestRun(test="test3", result="F", trace_file=t3_file, trace_count=3),
+                TestRun(test="pkg.A#test1", result="T", trace_file=t1_file, trace_count=3),
+                TestRun(test="pkg.A#test2", result="T", trace_file=t2_file, trace_count=3),
+                TestRun(test="pkg.A#test3", result="F", trace_file=t3_file, trace_count=3),
             ]
 
-            dataset_txt = root / "v1_dataset.txt"
-            write_standard_matrix_dataset(dataset_txt, runs)
-            lines = dataset_txt.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(lines), 4)
-            self.assertEqual(lines[0], "P1,P2,P3")
-            self.assertEqual(lines[1], "P1,P4,P5")
-            self.assertEqual(lines[2], "P2,P3,P4")
-            self.assertEqual(lines[3], "T,T,F")
-
-            # With P4 as a fault predicate:
-            # test1: T, no P4 -> PASS (T)
-            # test2: T, has P4 -> CC (CC)
-            # test3: F, has P4 -> FAIL (F)
-            tagged_txt = root / "v1_tagged.txt"
-            info = write_tagged_matrix_dataset(tagged_txt, runs, fault_predicates={4})
-            tagged_lines = tagged_txt.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(tagged_lines), 4)
-            self.assertEqual(tagged_lines[3], "T,CC,F")
+            traces_gz = root / "traces.tsv.gz"
+            info = write_traces_tsv_gz(traces_gz, runs, fault_predicates={4})
+            with gzip.open(traces_gz, "rt", encoding="utf-8") as stream:
+                lines = stream.read().splitlines()
+            self.assertEqual(
+                lines,
+                [
+                    "test_id\tstatus\tcc\tpath",
+                    "T1\tT\t0\t1 2 3",
+                    "T2\tT\t1\t1 4 5",
+                    "T3\tF\t0\t2 3 4",
+                ],
+            )
             self.assertEqual(info["n_pass"], 1)
             self.assertEqual(info["n_cc"], 1)
             self.assertEqual(info["n_fail"], 1)
+
+            tests_tsv = root / "tests.tsv"
+            write_tests_tsv(tests_tsv, info["included_rows"])
+            test_lines = tests_tsv.read_text(encoding="utf-8").splitlines()
+            self.assertTrue(test_lines[0].startswith("test_id\ttest_name\tstatus\tcc\tincluded"))
+            self.assertIn("T2\tpkg.A#test2\tT\t1\t1\t3", test_lines[2])
+
+            summary_json = root / "summary.json"
+            write_version_summary(
+                summary_json,
+                benchmark="Defects4J",
+                project="Lang",
+                bug_id=1,
+                test_set="relevant",
+                instrument_scope="relevant",
+                fault_predicates={4},
+                tag_info=info,
+                tests_discovered=3,
+                tests_excluded=0,
+                total_events=9,
+                max_events=3,
+                min_events=3,
+            )
+            summary = json.loads(summary_json.read_text(encoding="utf-8"))
+            self.assertEqual(summary["schema"], "efl-dataset-v2")
+            self.assertEqual(summary["fault_predicate_ids"], [4])
+            self.assertEqual(summary["counts"], {"pass_clean": 1, "coincidental_correct": 1, "fail": 1})
 
 
 if __name__ == "__main__":

@@ -22,11 +22,11 @@ from .trace import (
     merge_trace_directory,
     resolve_fault_predicates,
     safe_test_id,
-    write_detailed_summary,
-    write_efl_input,
+    write_dataset_readme,
     write_json,
-    write_standard_matrix_dataset,
-    write_tagged_matrix_dataset,
+    write_tests_tsv,
+    write_traces_tsv_gz,
+    write_version_summary,
 )
 from .cache_support import fingerprint, hash_file, validate_cache_manifest, write_cache_manifest
 
@@ -103,25 +103,29 @@ def result_root(work: Path, bug: BugRef, test_set: str) -> Path:
     return work / "results" / bug.project / f"v{bug.bug_id}" / test_set
 
 
+TRACES_FILENAME = "traces.tsv.gz"
+
+
 def _dataset_name(bug: BugRef) -> str:
-    return f"cmp.v0.v{bug.bug_id}.{bug.project}.csv"
+    return TRACES_FILENAME
 
 
 def _result_cache_status(root: Path, bug: BugRef, expected_fingerprint: str | None = None) -> tuple[bool, str]:
     required = [
         root / "complete.json",
-        root / _dataset_name(bug),
+        root / TRACES_FILENAME,
+        root / "tests.tsv",
+        root / "summary.json",
         root / "source_map.csv",
         root / "source_changes.json",
         root / "metadata.json",
-        root / "tests.jsonl",
     ]
     missing = [path.name for path in required if not path.is_file()]
     if missing:
         return False, "missing " + ", ".join(missing)
     if not _valid_json(root / "complete.json"):
         return False, "invalid complete.json"
-    if (root / _dataset_name(bug)).stat().st_size == 0:
+    if (root / TRACES_FILENAME).stat().st_size == 0:
         return False, "empty EFL input"
     if expected_fingerprint is not None:
         valid, reason = validate_cache_manifest(root, expected_fingerprint)
@@ -422,6 +426,7 @@ def instrument_bug(
     cache_mode: str,
     refresh_checkouts: bool,
     keep_checkouts: bool,
+    keep_raw_traces: bool = False,
     reporter: ConsoleReporter,
 ) -> Path:
     test_set = _test_set_key(test_selection, test_limit)
@@ -511,69 +516,84 @@ def instrument_bug(
     if not any(run.result == "F" for run in usable):
         raise RuntimeError(
             f"{bug.key} produced no failing traced tests. Try --instrument-scope all, "
-            "--test-selection all, or inspect excluded_tests.csv."
+            "--test-selection all, or examine excluded rows in tests.tsv."
         )
-    efl_input = output / _dataset_name(bug)
-    write_efl_input(efl_input, usable)
 
-    # Resolve fault markers & produce standard Siemens-style matrix and tagged datasets
     source_map_file = output / "source_map.csv"
     source_changes_file = output / "source_changes.json"
     fault_predicates = resolve_fault_predicates(source_map_file, source_changes_file)
 
-    dataset_txt = output / f"v{bug.bug_id}_dataset.txt"
-    tagged_txt = output / f"v{bug.bug_id}_tagged.txt"
-    detailed_json = output / f"v{bug.bug_id}_detailed.json"
+    traces_file = output / TRACES_FILENAME
+    tag_info = write_traces_tsv_gz(traces_file, usable, fault_predicates)
 
-    write_standard_matrix_dataset(dataset_txt, usable)
-    tag_info = write_tagged_matrix_dataset(tagged_txt, usable, fault_predicates)
-    write_detailed_summary(
-        detailed_json,
-        project=bug.project,
-        bug_id=bug.bug_id,
-        runs=usable,
-        fault_predicates=fault_predicates,
-        tag_info=tag_info,
-    )
+    test_rows = list(tag_info["included_rows"])
+    for idx, run in enumerate(excluded, start=1):
+        reason = "empty_trace" if run.trace_count == 0 else "invalid_or_fixed_failure"
+        test_rows.append(
+            {
+                "test_id": f"X{idx}",
+                "test_name": run.test,
+                "status": run.result,
+                "cc": 0,
+                "included": 0,
+                "trace_len": run.trace_count,
+                "duration_sec": round(run.duration_seconds, 4),
+                "return_code": run.return_code,
+                "timed_out": int(run.timed_out),
+                "reason": reason,
+            }
+        )
+    tests_tsv = output / "tests.tsv"
+    write_tests_tsv(tests_tsv, test_rows)
 
-    # Also mirror into a unified datasets directory: work/datasets/<project>/
-    unified_datasets_dir = work / "datasets" / bug.project
-    unified_datasets_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copy2(dataset_txt, unified_datasets_dir / f"v{bug.bug_id}_dataset.txt")
-        shutil.copy2(tagged_txt, unified_datasets_dir / f"v{bug.bug_id}_tagged.txt")
-        shutil.copy2(detailed_json, unified_datasets_dir / f"v{bug.bug_id}_detailed.json")
-        shutil.copy2(efl_input, unified_datasets_dir / _dataset_name(bug))
-    except Exception:
-        pass
-
-    with (output / "tests.jsonl").open("w", encoding="utf-8") as stream:
-        for run in runs:
-            stream.write(json.dumps(run.to_json(), ensure_ascii=False) + "\n")
-    with (output / "excluded_tests.csv").open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["test", "result", "fixed_result", "return_code", "timed_out", "trace_count", "reason"])
-        for run in excluded:
-            reason = "empty_trace" if run.trace_count == 0 else "invalid_or_fixed_failure"
-            writer.writerow([run.test, run.result, run.fixed_result or "", run.return_code, run.timed_out, run.trace_count, reason])
     stats = {
         "tests_discovered": len(runs),
         "tests_usable": len(usable),
         "tests_excluded": len(excluded),
-        "passing": sum(run.result == "T" for run in usable),
-        "failing": sum(run.result == "F" for run in usable),
+        "passing": tag_info["n_pass"],
+        "coincidental_correct": tag_info["n_cc"],
+        "failing": tag_info["n_fail"],
         "total_trace_events": sum(run.trace_count for run in usable),
         "maximum_trace_events": max((run.trace_count for run in usable), default=0),
         "minimum_trace_events": min((run.trace_count for run in usable), default=0),
     }
-    write_json(output / "trace_statistics.json", stats)
+    summary_json = output / "summary.json"
+    write_version_summary(
+        summary_json,
+        benchmark="Defects4J",
+        project=bug.project,
+        bug_id=bug.bug_id,
+        test_set=test_set,
+        instrument_scope=instrument_scope,
+        fault_predicates=fault_predicates,
+        tag_info=tag_info,
+        tests_discovered=len(runs),
+        tests_excluded=len(excluded),
+        total_events=stats["total_trace_events"],
+        max_events=stats["maximum_trace_events"],
+        min_events=stats["minimum_trace_events"],
+    )
     write_json(output / "complete.json", {"complete": True, "bug": bug.key, **stats})
     write_cache_manifest(
-        output, fp=cache_fingerprint, options=cache_options,
-        outputs=[output / "complete.json", efl_input, output / "source_map.csv", output / "source_changes.json", output / "metadata.json", output / "tests.jsonl"],
+        output,
+        fp=cache_fingerprint,
+        options=cache_options,
+        outputs=[
+            output / "complete.json",
+            traces_file,
+            tests_tsv,
+            summary_json,
+            source_map_file,
+            source_changes_file,
+            output / "metadata.json",
+        ],
     )
-    reporter.log(LogLevel.INFO, f"[INSTRUMENTED] {bug.key}/{test_set}: {efl_input}")
+    write_dataset_readme(work / "results")
+    reporter.log(LogLevel.INFO, f"[INSTRUMENTED] {bug.key}/{test_set}: {traces_file}")
 
+    if not keep_raw_traces:
+        shutil.rmtree(output / "tests", ignore_errors=True)
+        shutil.rmtree(output / "instrumentation", ignore_errors=True)
     if not keep_checkouts:
         shutil.rmtree(checkout_root, ignore_errors=True)
     return output
@@ -636,6 +656,7 @@ def instrument_suite(
     cache_mode: str = "reuse",
     refresh_checkouts: bool = False,
     keep_checkouts: bool = False,
+    keep_raw_traces: bool = False,
     jobs: int = 4,
     reporter: ConsoleReporter | None = None,
 ) -> list[Path]:
@@ -671,6 +692,7 @@ def instrument_suite(
                 cache_mode=cache_mode,
                 refresh_checkouts=refresh_checkouts,
                 keep_checkouts=keep_checkouts,
+                keep_raw_traces=keep_raw_traces,
                 reporter=reporter,
             ): bug
             for bug in bugs
@@ -697,15 +719,19 @@ def inspect_results(work_or_results: Path) -> list[dict[str, object]]:
     root = work_or_results.expanduser().resolve()
     results = root / "results" if (root / "results").is_dir() else root
     payload: list[dict[str, object]] = []
-    for csv_path in sorted(results.glob("*/v*/*/cmp.v0.v*.*.csv")):
-        version_root = csv_path.parent
+    seen_dirs: set[Path] = set()
+    for trace_path in sorted([*results.glob(f"*/v*/*/{TRACES_FILENAME}"), *results.glob("*/v*/*/cmp.v0.v*.*.csv")]):
+        version_root = trace_path.parent
+        if version_root in seen_dirs:
+            continue
+        seen_dirs.add(version_root)
         complete = _valid_json(version_root / "complete.json")
         payload.append(
             {
                 "project": version_root.parent.parent.name,
                 "version": int(version_root.parent.name.lstrip("v")),
                 "test_set": version_root.name,
-                "input": str(csv_path),
+                "input": str(trace_path),
                 "complete": complete,
             }
         )

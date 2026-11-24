@@ -119,8 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     instrument.add_argument("--jobs", type=int, default=1, help="Bug versions processed concurrently; 0 = conservative auto sizing from CPU/RAM")
     instrument.add_argument("--cache", choices=("reuse", "refresh"), default="reuse")
     instrument.add_argument("--refresh-checkouts", action="store_true")
-    instrument.add_argument("--keep-checkouts", action="store_true", default=True)
+    instrument.add_argument("--keep-checkouts", action="store_true", default=False)
     instrument.add_argument("--remove-checkouts", action="store_false", dest="keep_checkouts")
+    instrument.add_argument("--keep-raw-traces", action="store_true", default=False, help="Retain raw per-test binary trace.bin files after building traces.tsv.gz")
     instrument.add_argument("--asm-jar", type=Path, help="External ASM jar; required for Defects4J 2.x/Java 8")
     instrument.add_argument("--rebuild-agent", action="store_true")
     _add_ui(instrument)
@@ -184,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             cache_mode=args.cache,
             refresh_checkouts=args.refresh_checkouts,
             keep_checkouts=args.keep_checkouts,
+            keep_raw_traces=args.keep_raw_traces,
             jobs=args.jobs,
             reporter=reporter,
         )
