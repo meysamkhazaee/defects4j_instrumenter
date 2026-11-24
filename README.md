@@ -60,58 +60,31 @@ defects4j_instrumenter/
 
 ---
 
-## 📊 Dataset Output Format
+## 📊 Dataset Output Format (`efl-dataset-v2`)
 
-For each bug version (e.g. `Lang-1`, `Math-5`), the instrumenter generates:
+For each bug version (e.g. `Lang-1`, `Math-5`), the instrumenter writes a single compact, self-describing directory under `work/results/<project>/v<id>/<test_set>/` (see `../DATASET_FORMAT_README.md` and `work/results/DATASET_README.md` for full field-level details and source-mapping instructions):
 
-### 1. `v<id>_dataset.txt` (Strict Dataset)
-Lines `1` to `N` are the execution path P-point traces of each test, and the last line (`N+1`) is the comma-separated verdict vector of `T` (Pass) and `F` (Fail):
-```text
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P5,P6,P7,P10,P12
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P10,P12
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P5,P9,P10,P12
-T,T,T,F,T,F,F,T,T,T
+### 1. `traces.tsv.gz` (Canonical Lossless Compressed Traces)
+Gzip-compressed UTF-8 TSV with header:
+```tsv
+test_id	status	cc	path
+T1	T	0	1 2 3 4 4 3 5
+T2	T	1	1 2 4 5
+T3	F	0	1 2 4 6
 ```
+- `test_id`: Short identifier (`T1..TN`) mapped to full JUnit methods in `tests.tsv`.
+- `status`: Strict oracle verdict (`T` = Pass, `F` = Fail).
+- `cc`: Ground-truth Coincidental Correctness (`1` if `status=T` and execution visited a fault predicate, else `0`).
+- `path`: Space-separated integer predicate IDs (`1 2 3 ...`) matching `id` in `source_map.csv`.
 
-### 2. `v<id>_tagged.txt` (Rich CC Tagged Dataset)
-Identical execution path traces, but the bottom verdict line distinguishes **Coincidentally Correct (`CC`)** tests:
-```text
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P5,P6,P7,P10,P12
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P10,P12
-P1,P2,P3,P4,P4,P3,P4,P4,P2,P3,P4,P4,P3,P4,P4,P5,P9,P10,P12
-T,T,CC,F,T,CC,F,T,T,T
-```
-- `T` (PASS): Output matched oracle, fault location was **not** traversed.
-- `CC` (COINCIDENTAL_CORRECT): Test passed, but the fault location **was executed**!
-- `F` (FAIL): Test failed.
+### 2. `tests.tsv`
+Complete inventory of all discovered tests (`T1..TN` included, `X1..XM` excluded) mapping `test_id` to the exact JUnit method (`pkg.Class#method`), `status`, `cc`, `included`, `trace_len`, `duration_sec`, `return_code`, `timed_out`, and `reason`.
 
-### 3. `v<id>_detailed.json`
-Complete structural metadata:
-```json
-{
-  "benchmark": "Defects4J",
-  "project": "Lang",
-  "version": "v1",
-  "total_tests": 85,
-  "duration_sec": 42.15,
-  "fault_predicates": ["P14", "P15"],
-  "summary": {
-    "pass": 79,
-    "coincidental_correct": 4,
-    "fail": 2
-  },
-  "verdict_vector_strict": ["T", "T", "F", "..."],
-  "verdict_vector_tagged": ["T", "CC", "F", "..."],
-  "tests": [...]
-}
-```
-
-### 4. `cmp.v0.v<id>.<project>.csv`
-Standard 3-column EFL Stage 2 feed:
-```csv
-test_name,status,execution_path
-org.apache.commons.lang3.math.NumberUtilsTest#testCreateNumber,T,"P1,P2,P3,P4"
-```
+### 3. `summary.json`, `source_map.csv`, `source_changes.json`, `metadata.json`, `cache_manifest.json`
+- `summary.json`: Compact aggregate counts, instrumentation metadata (`bytecode_line`, `java_asm_agent`, `scope`), and `fault_predicate_ids` without duplicating trace paths.
+- `source_map.csv`: Maps each integer `id` (`P<id>`) to `file`, `line`, `function`, `class`, `method`, `descriptor`.
+- `source_changes.json`: Diff lines between buggy (`v<id>b`) and fixed (`v<id>f`) sources.
+- Raw `tests/*/trace.bin` and `checkouts/` are cleaned automatically once `traces.tsv.gz` is verified (pass `--keep-raw-traces` or `--keep-checkouts` to retain them).
 
 ---
 
