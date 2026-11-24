@@ -76,36 +76,56 @@ T,T,CC,F,T,CC,F,T,T,T
 sudo apt update && sudo apt install -y openjdk-11-jdk git subversion perl cpanminus curl unzip
 ```
 
-### ۲. اجرای سریع با اسکریپت `run.sh`:
-اسکریپت `run.sh` به صورت خودکار فایل `defects4j-3.0.1.zip` موجود در پوشه را شناسایی و کانفیگ می‌کند:
+### ۲. اجرای تفکیک‌شده و پرسرعت (پیشنهادی بر اساس سرعت پروژه‌ها):
+
+برای جلوگیری از طولانی شدن اجرا، پیشنهاد می‌شود پروژه‌ها را به صورت لایه‌بندی شده (Tiered) اجرا کنید و حتماً از گزینه `--test-selection relevant` استفاده کنید:
 
 ```bash
-# اجرای یک باگ نمونه (مثلاً باگ ۱ پروژه Lang):
+# --- لایه ۱: پروژه‌های فوق‌العاده سریع (کل اجرا حدود ۱۵ تا ۳۰ دقیقه) ---
+./run.sh --projects Csv,Codec,Gson,Chart,Time --test-selection relevant --jobs 8
+
+# --- لایه ۲: پروژه‌های پایه و اصلی مقالات (حدود ۱ تا ۲ ساعت) ---
+./run.sh --projects Lang,Math --test-selection relevant --jobs 8
+
+# --- لایه ۳: پروژه‌های متوسط (حدود ۱ تا ۲ ساعت) ---
+./run.sh --projects Cli,Collections,Compress,JacksonCore,JacksonXml,JxPath --test-selection relevant --jobs 8
+
+# --- لایه ۴: پروژه‌های سنگین (اجرای مجزا در طول شب) ---
+./run.sh --projects Mockito --test-selection relevant --jobs 8
+./run.sh --projects Jsoup --test-selection relevant --jobs 8
+./run.sh --projects JacksonDatabind --test-selection relevant --jobs 8
+./run.sh --projects Closure --test-selection relevant --jobs 8
+```
+
+### ۳. کامندهای اجرای تک‌باگ، پروفایل مقاله و کل بنچ‌مارک:
+
+```bash
+# ۱. اجرای یک باگ خاص (مثلاً باگ ۱ پروژه Lang):
 ./run.sh --projects Lang --bugs 1
 
-# اجرای موازی با ۴ پروسس روی پروژه Math:
+# ۲. اجرای چند باگ خاص با موازی‌سازی (مثلاً باگ‌های ۱، ۲ و ۵ پروژه Math):
 ./run.sh --projects Math --bugs 1,2,5 --jobs 4
 
-# اجرای کل ۳۹۵ باگ پروفایل استاندارد مقاله (scd4fl-2024 روی ۶ پروژه اصلی):
-./run.sh --profile scd4fl-2024 --jobs 0
+# ۳. اجرای کل ۳۹۵ باگ پروفایل استاندارد مقاله (scd4fl-2024 روی ۶ پروژه اصلی):
+./run.sh --profile scd4fl-2024 --test-selection relevant --jobs 8 --timeout 60
 
-# اجرای تمام ۱۷ پروژه و بیش از ۸۳۵ باگ Defects4J (پوشش حداکثری و کامل):
-./run.sh --jobs 0
+# ۴. اجرای تمام ۱۷ پروژه و همه ۸۳۸ باگ Defects4J 3.0.1 (پوشش حداکثری و نهایی):
+./run.sh --test-selection relevant --jobs 8 --timeout 60
 
-# یا اجرای مستقیم با پایتون:
+# ۵. اجرای مستقیم با پایتون:
 python3 run_defects4j.py --projects Lang --bugs 1
 ```
-*(فلگ `--jobs 0` تعداد پردازش‌های همزمان را به صورت هوشمند بر اساس حافظه رم و تعداد هسته‌های پردازنده تنظیم می‌کند).*
 
 ---
 
-### ۳. تفاوت پروفایل‌ها و حالات انتخاب تست:
+### ۴. تفاوت پروفایل‌ها و حالات انتخاب تست:
 
 * **دامنه بنچ‌مارک (Benchmark Scope):**
-  - **پروفایل مقاله (`--profile scd4fl-2024`):** ۶ پروژه استاندارد مقالات علمی Fault Localization شامل **۳۹۵ باگ** واقعی (`Chart: 26`, `Closure: 133`, `Lang: 65`, `Math: 106`, `Mockito: 38`, `Time: 27`).
-  - **حالت کامل (بدون `--profile`):** پردازش **تمام ۱۷ پروژه** و **۸۳۵+ باگ** موجود در Defects4J 3.0.1 (شامل `Cli`, `Codec`, `Collections`, `Compress`, `Gson`, `Jackson`, `Jsoup` و...).
+  - **پروژه‌های ۶گانه کلاسیک (۳۹۵ باگ - پیش‌فرض مقالات FL):** `Chart: 26`, `Closure: 133`, `Lang: 65`, `Math: 106`, `Mockito: 38`, `Time: 27`.
+  - **پروژه‌های ۱۱گانه تکمیلی (۴۴۳ باگ):** `Csv: 16`, `Codec: 18`, `Gson: 18`, `JxPath: 22`, `JacksonCore: 26`, `JacksonXml: 6`, `Collections: 28`, `Cli: 40`, `Compress: 47`, `Jsoup: 93`, `JacksonDatabind: 112`.
+  - **مجموع:** ۱۷ پروژه و ۸۳۸ باگ واقعی.
 
 * **حالات انتخاب تست دیتا (`--test-selection <mode>`):**
-  - **`relevant` (پیش‌فرض و استاندارد):** اجرای تمام تست‌های مرتبط با کلاس‌های تغییریافته (چند ده تا چند صد تست برای هر باگ؛ شامل هر سه دسته تست Pass و CC و Fail).
-  - **`all` (حداکثری مطلق):** اجرای تمامی تست‌های موجود در پروژه (گاهی بیش از ۱۰,۰۰۰ تست برای یک باگ).
-  - **`trigger` (دیباگ سریع):** فقط اجرای تست‌هایی که به خطا می‌خورند (۱ تا ۳ تست).
+  - **`relevant` (بسیار سریع و استاندارد ۵۰x-۱۰۰x):** اجرای تست‌های مرتبط با کلاس‌های تغییریافته (شامل تمام مسیرهای Pass، CC و Fail).
+  - **`trigger` (دیباگ سریع):** فقط تست‌های فیل‌شده (۱ تا ۳ تست برای هر باگ).
+  - **`all` (بسیار کند):** اجرای تمام چند هزار تست کل مخزن (استفاده از آن برای کل ۸۳۸ باگ اصلاً توصیه نمی‌شود چون هفته‌ها زمان می‌برد).

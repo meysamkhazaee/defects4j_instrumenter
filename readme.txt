@@ -14,7 +14,7 @@ benchmark suite.
 ## 1. System Requirements & Setup (Debian / Ubuntu / Linux):
 ########################################################################
 
-Defects4J requires JDK 11 and a few Unix tools (git, svn, perl, cpanm).
+Defects4J requires JDK 11 and Unix toolchain packages.
 Install them via apt:
 
   sudo apt update
@@ -25,64 +25,110 @@ Verify Java 11:
   javac -version
 
 ########################################################################
-## 2. Execution Commands:
+## 2. Defects4J 3.0.1 Projects & Sub-Suites Catalog (17 Projects, 838 Bugs):
 ########################################################################
 
-The root script './run.sh' automatically locates 'defects4j-3.0.1.zip'
-and configures the environment:
+A) The Classical 6 Research Projects (395 bugs - Standard in FL Literature):
+   - Chart          : 26 bugs  [v1 - v26]   | JFreeChart 2D chart library      (Fast)
+   - Time           : 27 bugs  [v1 - v27]   | Joda-Time date/time library      (Fast)
+   - Mockito        : 38 bugs  [v1 - v38]   | Mockito mocking framework        (Medium)
+   - Lang           : 65 bugs  [v1 - v65]   | Apache Commons Lang utilities    (Fast)
+   - Math           : 106 bugs [v1 - v106]  | Apache Commons Math library      (Medium)
+   - Closure        : 133 bugs [v1 - v133]  | Google Closure JS compiler       (Heavy)
+   Total: 395 bugs (covered by '--profile scd4fl-2024')
+
+B) The 11 Extended Projects (443 bugs - Added in Defects4J v2/v3):
+   - Csv            : 16 bugs  [v1 - v16]   | Apache Commons CSV parser        (Ultra Fast)
+   - Codec          : 18 bugs  [v1 - v18]   | Apache Commons Codec (Base64)    (Ultra Fast)
+   - Gson           : 18 bugs  [v1 - v18]   | Google Gson JSON library         (Fast)
+   - JxPath         : 22 bugs  [v1 - v22]   | Apache Commons JXPath            (Fast)
+   - JacksonCore    : 26 bugs  [v1 - v26]   | Jackson JSON streaming parser    (Fast)
+   - JacksonXml     : 6 bugs   [v1 - v6]    | Jackson XML dataformat           (Ultra Fast)
+   - Collections    : 28 bugs  [v1 - v28]   | Apache Commons Collections       (Medium)
+   - Cli            : 40 bugs  [v1 - v40]   | Apache Commons CLI parser        (Medium)
+   - Compress       : 47 bugs  [v1 - v47]   | Apache Commons Compress          (Medium)
+   - Jsoup          : 93 bugs  [v1 - v93]   | Jsoup Java HTML parser           (Medium)
+   - JacksonDatabind: 112 bugs [v1 - v112]  | Jackson general data-binding     (Heavy)
+
+Grand Total across all 17 projects: 838 real bugs.
+
+########################################################################
+## 3. High-Performance Execution Commands (Recommended Tiers):
+########################################################################
+
+To avoid massive execution times, ALWAYS use '--test-selection relevant'
+and run projects from fastest to heaviest:
+
+--- TIER 1: Ultra-Fast Quick Start (Takes ~15-30 minutes total) ---
+Run lightweight projects to get instant datasets:
+  ./run.sh --projects Csv,Codec,Gson,Chart,Time --test-selection relevant --jobs 8
+
+--- TIER 2: Core Academic Libraries (Takes ~1-2 hours) ---
+Run the main Apache Commons and Math projects:
+  ./run.sh --projects Lang,Math --test-selection relevant --jobs 8
+
+--- TIER 3: Remaining Medium Projects (Takes ~1-2 hours) ---
+  ./run.sh --projects Cli,Collections,Compress,JacksonCore,JacksonXml,JxPath --test-selection relevant --jobs 8
+
+--- TIER 4: Heavy Projects (Run individually overnight) ---
+  ./run.sh --projects Mockito --test-selection relevant --jobs 8
+  ./run.sh --projects Jsoup --test-selection relevant --jobs 8
+  ./run.sh --projects JacksonDatabind --test-selection relevant --jobs 8
+  ./run.sh --projects Closure --test-selection relevant --jobs 8
+
+########################################################################
+## 4. Benchmark Profile & Full Suite Commands:
+########################################################################
 
   # 1. Run a single bug version (e.g. Lang bug 1):
   ./run.sh --projects Lang --bugs 1
 
-  # 2. Run multiple bugs with 4 parallel worker threads:
+  # 2. Run multiple specific bugs (e.g. Math bugs 1, 2, and 5):
   ./run.sh --projects Math --bugs 1,2,5 --jobs 4
 
-  # 3. Run all bugs for a specific project:
-  ./run.sh --projects Chart --test-selection relevant --jobs 4
+  # 3. Standard Paper Benchmark Profile (scd4fl-2024: 395 bugs across 6 core projects):
+  ./run.sh --profile scd4fl-2024 --test-selection relevant --jobs 8 --timeout 60
 
-  # 4. Standard Paper Benchmark Profile (scd4fl-2024: 395 bugs across 6 core projects):
-  ./run.sh --profile scd4fl-2024 --jobs 0
+  # 4. ABSOLUTE MAXIMUM - All 17 projects & all 838 bugs in Defects4J 3.0.1:
+  ./run.sh --test-selection relevant --jobs 8 --timeout 60
 
-  # 5. ABSOLUTE MAXIMUM - All 17 projects & all 835+ bugs in Defects4J 3.0.1:
-  ./run.sh --jobs 0
-
-  # Or invoke via Python directly:
+  # 5. Direct Python invocation:
   python3 run_defects4j.py --projects Lang --bugs 1
 
 ########################################################################
-## 3. Scope of Benchmark Profiles & Test Selection:
+## 5. Performance Optimization Flags Explained:
 ########################################################################
 
-A) Benchmark Scope:
-  - Standard Paper Profile (--profile scd4fl-2024):
-    Covers the 6 classical, widely-studied projects in Fault Localization
-    literature (total 395 bugs):
-      * Chart   : 26 bugs (v1 - v26)
-      * Closure : 133 bugs (v1 - v133)
-      * Lang    : 65 bugs (v1 - v65)
-      * Math    : 106 bugs (v1 - v106)
-      * Mockito : 38 bugs (v1 - v38)
-      * Time    : 27 bugs (v1 - v27)
+1) --test-selection <mode>:
+   - 'relevant' (CRITICAL - 50x-100x FASTER):
+     Runs only tests targeting modified classes (tens to hundreds of tests
+     per bug). Standard in all literature. DO NOT use 'all' for full suite
+     runs as running 10,000+ tests per bug will take weeks.
+   - 'trigger':
+     Runs ONLY tests that fail/trigger the bug (1-3 tests per bug, instant).
+   - 'all':
+     Runs every single unit test in the entire repository (extremely slow).
 
-  - Full Benchmark Run (omit --profile):
-    Runs ALL 17 projects in Defects4J 3.0.1 (total 835+ bugs), including
-    Cli, Codec, Collections, Compress, Csv, Gson, JacksonCore,
-    JacksonDatabind, JacksonXml, Jsoup, JxPath, Lang, Math, Mockito, Time.
-    Command: ./run.sh --jobs 0
+2) --test-limit <N> (Optional Cap):
+   Caps the maximum number of tests per bug (e.g. '--test-limit 80').
+   Failing/triggering tests are ALWAYS placed first and guaranteed to execute.
 
-B) Test Selection (--test-selection <mode>):
-  - 'relevant' (Default & Recommended):
-    Runs all tests related to modified/buggy classes (tens to hundreds of
-    tests per bug). This is the standard in literature, capturing PASS, CC,
-    and FAIL tests without excessive overhead.
-  - 'all' (Absolute Maximum):
-    Executes the entire test suite of the project (can be 10,000+ tests per
-    bug; very time-consuming).
-  - 'trigger' (Minimal Debug):
-    Executes ONLY the test cases that fail/trigger the bug (1-3 tests per bug).
+3) --instrument-scope modified:
+   Instruments only classes mutated by the bug fix, drastically reducing
+   trace sizes and disk I/O.
+
+4) --jobs <N>:
+   Concurrent worker processes. Set explicitly to match CPU cores (e.g. -j 8
+   or -j 16). Pass '--jobs 0' for automatic hardware-based calculation.
+
+5) --timeout <seconds>:
+   Default is 300s. Set '--timeout 60' so hanging tests do not block workers.
+
+6) --cache reuse:
+   Default is 'reuse'. If interrupted, re-running skips completed bugs instantly.
 
 ########################################################################
-## 4. Java Agent Build Commands:
+## 6. Java Agent Build Commands:
 ########################################################################
 
 The Java Bytecode Agent (defects4j-efl-agent.jar & defects4j-efl-runtime.jar)
@@ -91,7 +137,7 @@ is pre-built in 'java-agent/build/'. If you ever need to recompile it:
   bash scripts/build_agent.sh
 
 ########################################################################
-## 5. Output Datasets & Directory Structure:
+## 7. Output Datasets & Directory Structure:
 ########################################################################
 
 All output datasets are automatically generated and mirrored in:
@@ -111,7 +157,7 @@ Detailed checkouts and per-test logs are stored in:
   output/results/<project>/v<bug_id>/relevant/
 
 ########################################################################
-## 6. Differences Between _dataset.txt and _tagged.txt:
+## 8. Differences Between _dataset.txt and _tagged.txt:
 ########################################################################
 
 For each tested bug version (e.g. Lang v1, Math v5), two dataset text files
@@ -156,7 +202,7 @@ The ONLY difference is in the FINAL LINE (the test verdict vector):
    correctness to prevent ranking distortion.
 
 ########################################################################
-## 7. Running Automated Self-Tests:
+## 9. Running Automated Self-Tests:
 ########################################################################
 
 To verify the test suite:

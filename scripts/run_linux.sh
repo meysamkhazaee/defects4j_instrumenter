@@ -22,10 +22,13 @@ fi
 
 # 2. Check Defects4J Archive default
 DEFAULT_ZIP="$SCRIPT_DIR/defects4j-3.0.1.zip"
+PARENT_ZIP="$(dirname "$SCRIPT_DIR")/defects4j-3.0.1.zip"
 DEFECTS4J_ARG=()
 if [[ ! " $* " =~ " --defects4j " ]]; then
     if [[ -f "$DEFAULT_ZIP" ]]; then
         DEFECTS4J_ARG=(--defects4j "$DEFAULT_ZIP")
+    elif [[ -f "$PARENT_ZIP" ]]; then
+        DEFECTS4J_ARG=(--defects4j "$PARENT_ZIP")
     elif [[ -z "${DEFECTS4J_HOME:-}" && -z "${DEFECTS4J_PATH:-}" ]] && ! command -v defects4j >/dev/null 2>&1; then
         DEFECTS4J_ARG=(--defects4j "$DEFAULT_ZIP")
     fi
