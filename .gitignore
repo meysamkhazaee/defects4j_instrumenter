@@ -23,3 +23,5 @@ framework-cache/
 .idea/
 .vscode/
 *.swp
+
+*.zip
