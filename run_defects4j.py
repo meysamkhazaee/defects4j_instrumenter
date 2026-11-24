@@ -32,6 +32,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from defects4j_efl_instrumenter import __version__
 from defects4j_efl_instrumenter.agent import ensure_agent
 from defects4j_efl_instrumenter.commands import configure_java_home, resolve_defects4j
 from defects4j_efl_instrumenter.framework import prepare_defects4j
@@ -134,6 +135,11 @@ def parse_args():
         default="INFO",
         help="Logging verbosity level",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     return parser.parse_args()
 
 
@@ -143,7 +149,7 @@ def main():
     reporter = ConsoleReporter(level=log_level, progress_enabled=True)
 
     print("=" * 80)
-    print(" Defects4J Automated Instrumentation & Dataset Generator")
+    print(f" Defects4J Automated Instrumentation & Dataset Generator (v{__version__})")
     print("=" * 80)
 
     # 1. Resolve JDK

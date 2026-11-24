@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import __version__
 from .commands import configure_java_home, resolve_defects4j
 from .progress import ConsoleReporter, LogLevel
 from .runner import inspect_results, instrument_suite, resolve_bugs
@@ -83,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="defects4j-efl-data",
         description="Generate ordered EFL trace datasets from Defects4J buggy versions",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

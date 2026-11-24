@@ -29,6 +29,22 @@ def java_major(java: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def load_version() -> str:
+    """Read version dynamically from project VERSION file."""
+    candidates = [
+        Path(__file__).resolve().parent.parent / "VERSION",
+        Path(__file__).resolve().parent / "VERSION",
+    ]
+    for p in candidates:
+        if p.is_file():
+            try:
+                return p.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
+    return "1.3.5"
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the Defects4J EFL Java agent")
     parser.add_argument("--asm-jar", type=Path)
@@ -103,7 +119,7 @@ def main() -> int:
         "Can-Redefine-Classes: false\n"
         "Can-Retransform-Classes: false\n"
         "Implementation-Title: EFL Defects4J Ordered Trace Agent\n"
-        "Implementation-Version: 1.3.5\n",
+        f"Implementation-Version: {load_version()}\n",
         encoding="utf-8",
     )
     agent_jar = build / "defects4j-efl-agent.jar"
